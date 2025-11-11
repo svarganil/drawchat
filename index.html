@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shared Canvas (GitHub Pages + Firebase)</title>
+  <style>
+    :root { --bg: #fafafa; --ink: #111; }
+    html, body { height: 100%; margin: 0; background: var(--bg); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .wrap { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+    header { padding: 12px 16px; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #e5e5e5; background: white; position: sticky; top: 0; z-index: 1; }
+    header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+    .spacer { flex: 1; }
+    button, select, input[type="color"] { border: 1px solid #ddd; background: #fff; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+    button:hover { border-color: #bbb; }
+    canvas { display: block; width: 100%; height: calc(100vh - 120px); background: #fff; }
+    footer { padding: 10px 16px; color: #666; border-top: 1px solid #e5e5e5; background: white; }
+    .pill { padding: 4px 8px; border-radius: 999px; background:#f2f2f2; border:1px solid #e5e5e5; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🖌️ Shared Canvas</h1>
+      <span class="pill">GitHub Pages + Firebase Realtime Database</span>
+      <div class="spacer"></div>
+      <label>Brush size <input id="size" type="range" min="1" max="30" value="6" /></label>
+      <input id="color" type="color" value="#111111" />
+      <button id="clear">Clear</button>
+      <button id="save">Guardar (Save for everyone)</button>
+    </header>
+
+    <canvas id="board"></canvas>
+
+    <footer>
+      Paste your Firebase config inside the script. By default this will work if your Realtime Database is in test mode. For production, enable Anonymous Auth and secure your rules.
+    </footer>
+  </div>
+
+  <!-- App logic: import Firebase directly from CDN (no build tools needed) -->
+  <script type="module">
+    // ----- 1) Firebase SDKs (v11) from CDN -----
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    // Optional: enable anonymous auth if you lock rules
+    // import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    // ----- 2) YOUR Firebase config -----
+    // 🔴 Replace with your own values from Firebase Console → Project settings → General → Your apps (Web)
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "XXXXXXXXXXXX",
+      appId: "1:XXXXXXXXXXXX:web:XXXXXXXXXXXX"
+    };
+
+    // ----- 3) Init Firebase -----
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // If you change rules to require auth, uncomment below:
+    // const auth = getAuth(app);
+    // signInAnonymously(auth).catch(console.error);
+
+    // ----- 4) Canvas setup -----
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      // Save current image before resizing
+      const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width = window.innerWidth;
+      canvas.height = Math.max(400, window.innerHeight - 120);
+      // Restore
+      try { ctx.putImageData(snapshot, 0, 0); } catch (_) { /* first load */ }
+      // Crisp lines
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const sizeEl = document.getElementById('size');
+    const colorEl = document.getElementById('color');
+    const clearBtn = document.getElementById('clear');
+    const saveBtn = document.getElementById('save');
+
+    let drawing = false;
+    let lastX = 0, lastY = 0;
+
+    function posFromMouse(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+    function posFromTouch(e) {
+      const t = e.touches[0];
+      if (!t) return null;
+      const rect = canvas.getBoundingClientRect();
+      return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    }
+
+    function begin(x, y) {
+      drawing = true;
+      lastX = x; lastY = y;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
+    function drawTo(x, y) {
+      if (!drawing) return;
+      ctx.lineWidth = Number(sizeEl.value);
+      ctx.strokeStyle = colorEl.value;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastX = x; lastY = y;
+    }
+    function end() { drawing = false; }
+
+    // Mouse
+    canvas.addEventListener('mousedown', e => { const p = posFromMouse(e); begin(p.x, p.y); });
+    canvas.addEventListener('mousemove', e => { const p = posFromMouse(e); drawTo(p.x, p.y); });
+    window.addEventListener('mouseup', end);
+
+    // Touch
+    canvas.addEventListener('touchstart', e => { const p = posFromTouch(e); if (p) begin(p.x, p.y); }, { passive: true });
+    canvas.addEventListener('touchmove', e => { const p = posFromTouch(e); if (p) drawTo(p.x, p.y); }, { passive: true });
+    window.addEventListener('touchend', end, { passive: true });
+
+    // Clear
+    clearBtn.addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+
+    // ----- 5) Load shared image in real time -----
+    const docRef = ref(db, 'drawing');
+    onValue(docRef, (snap) => {
+      const data = snap.val();
+      if (data && data.img) {
+        const img = new Image();
+        img.onload = () => {
+          // Clear before drawing the shared image so it matches exactly
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // Fit image to canvas preserving aspect (draw full canvas)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+        img.src = data.img;
+      }
+    });
+
+    // ----- 6) Save for everyone (overwrites the single shared image) -----
+    saveBtn.addEventListener('click', async () => {
+      const dataUrl = canvas.toDataURL('image/png');
+      await set(docRef, { img: dataUrl, savedAt: Date.now() });
+      saveBtn.textContent = 'Saved!';
+      setTimeout(() => (saveBtn.textContent = 'Guardar (Save for everyone)'), 1200);
+    });
+  </script>
+</body>
+</html>
