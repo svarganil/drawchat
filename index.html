@@ -17,11 +17,36 @@
     button, select, input[type="color"] { border: 1px solid #ddd; background: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; min-height: 36px; touch-action: manipulation; }
     button:hover { border-color: #bbb; }
     input[type="color"] { width: 40px; height: 36px; padding: 2px; cursor: pointer; }
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 70px);
+      overflow: hidden;
+      background: #f0f0f0;
+    }
     canvas { 
       display: block; 
       width: 100%; 
-      height: calc(100vh - 70px); 
+      height: 100%; 
       touch-action: none;
+    }
+    
+    /* Mobile: enable panning with scrollable container */
+    @media (max-width: 768px) {
+      .canvas-container {
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        position: relative;
+        /* Center canvas initially on mobile */
+        scroll-behavior: smooth;
+        /* Allow scrolling by touching container edges or using two fingers */
+        touch-action: pan-x pan-y;
+      }
+      canvas {
+        /* On mobile, canvas takes full logical size, container allows scrolling */
+        touch-action: none;
+      }
     }
     /* Support for devices with notches */
     @supports (padding: max(0px)) {
@@ -85,7 +110,9 @@
       </div>
     </header>
 
-    <canvas id="board"></canvas>
+    <div class="canvas-container">
+      <canvas id="board"></canvas>
+    </div>
   </div>
 
   <!-- App logic: import Firebase directly from CDN (no build tools needed) -->
@@ -215,10 +242,7 @@
       const headerHeight = header ? header.offsetHeight : 70;
       const displayWidth = window.innerWidth;
       const displayHeight = Math.max(400, window.innerHeight - headerHeight);
-      
-      // Set display size (CSS) to fit the viewport
-      canvas.style.width = displayWidth + 'px';
-      canvas.style.height = displayHeight + 'px';
+      const isMobile = window.innerWidth <= 768;
       
       // Initialize canvas with fixed logical resolution only once
       if (!isCanvasInitialized) {
@@ -239,9 +263,34 @@
         saveCurrentDrawing();
         
         isCanvasInitialized = true;
+        
+        // Center canvas on mobile devices after initialization
+        if (isMobile) {
+          setTimeout(() => {
+            const container = document.querySelector('.canvas-container');
+            if (container) {
+              const scrollX = (CANVAS_LOGICAL_WIDTH - container.clientWidth) / 2;
+              const scrollY = (CANVAS_LOGICAL_HEIGHT - container.clientHeight) / 2;
+              container.scrollTo({
+                left: Math.max(0, scrollX),
+                top: Math.max(0, scrollY),
+                behavior: 'auto'
+              });
+            }
+          }, 200);
+        }
       }
-      // If canvas is already initialized, we only need to update display size
-      // The internal resolution stays the same, so no need to redraw
+      
+      // Set display size based on device type
+      if (isMobile) {
+        // On mobile: show canvas at full logical size for panning
+        canvas.style.width = CANVAS_LOGICAL_WIDTH + 'px';
+        canvas.style.height = CANVAS_LOGICAL_HEIGHT + 'px';
+      } else {
+        // On desktop: fit to viewport
+        canvas.style.width = displayWidth + 'px';
+        canvas.style.height = displayHeight + 'px';
+      }
       
       // Ensure crisp lines (set once, but safe to set multiple times)
       ctx.lineCap = 'round';
@@ -330,41 +379,63 @@
     canvas.addEventListener('mousemove', e => { const p = posFromMouse(e); drawTo(p.x, p.y); });
     window.addEventListener('mouseup', end);
 
-    // Touch - prevent default to avoid scrolling while drawing
+    // Touch handling: one finger = drawing on canvas, container allows scrolling for panning
     let lastTouchEnd = 0;
+    const isMobileDevice = () => window.innerWidth <= 768;
+    
     canvas.addEventListener('touchstart', e => { 
+      // Two fingers = allow panning (scrolling container)
+      if (e.touches.length === 2) {
+        drawing = false;
+        // Allow default scrolling behavior for panning
+        return;
+      }
+      
+      // One finger on canvas = drawing mode
+      if (e.touches.length === 1) {
+        // Prevent scrolling while drawing to get accurate coordinates
+        e.preventDefault();
+        const p = posFromTouch(e); 
+        if (p) {
+          begin(p.x, p.y);
+        }
+      }
+      
       // Prevent double-tap zoom
       const now = Date.now();
-      if (now - lastTouchEnd < 300) {
-        e.preventDefault();
-      }
-      if (e.touches.length === 1) {
-        e.preventDefault();
-        const p = posFromTouch(e); 
-        if (p) begin(p.x, p.y); 
-      } else if (e.touches.length > 1) {
-        // Prevent zoom on multi-touch
+      if (now - lastTouchEnd < 300 && e.touches.length === 1) {
         e.preventDefault();
       }
     }, { passive: false });
+    
     canvas.addEventListener('touchmove', e => { 
+      // Two fingers = allow panning (scrolling)
+      if (e.touches.length === 2) {
+        drawing = false;
+        // Don't prevent default - allow scrolling
+        return;
+      }
+      
+      // One finger = drawing
       if (e.touches.length === 1 && drawing) {
-        e.preventDefault();
+        e.preventDefault(); // Prevent scrolling while drawing
         const p = posFromTouch(e); 
-        if (p) drawTo(p.x, p.y); 
-      } else if (e.touches.length > 1) {
-        // Prevent zoom on multi-touch
-        e.preventDefault();
+        if (p) drawTo(p.x, p.y);
       }
     }, { passive: false });
+    
     canvas.addEventListener('touchend', e => {
       lastTouchEnd = Date.now();
-      e.preventDefault();
-      end();
+      
+      // End drawing if we were drawing
+      if (drawing && e.touches.length === 0) {
+        end();
+      }
     }, { passive: false });
+    
     canvas.addEventListener('touchcancel', e => {
+      drawing = false;
       e.preventDefault();
-      end();
     }, { passive: false });
 
     // Clear - redraw tile pattern
