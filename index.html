@@ -17,7 +17,12 @@
     button, select, input[type="color"] { border: 1px solid #ddd; background: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; min-height: 36px; touch-action: manipulation; }
     button:hover { border-color: #bbb; }
     input[type="color"] { width: 40px; height: 36px; padding: 2px; cursor: pointer; }
-    canvas { display: block; width: 100%; height: calc(100vh - 70px); background: #fff; touch-action: none; }
+    canvas { 
+      display: block; 
+      width: 100%; 
+      height: calc(100vh - 70px); 
+      touch-action: none;
+    }
     /* Support for devices with notches */
     @supports (padding: max(0px)) {
       header { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
@@ -115,42 +120,134 @@
     // ----- 4) Canvas setup -----
     const canvas = document.getElementById('board');
     const ctx = canvas.getContext('2d');
+    
+    // Fixed canvas resolution for consistency across all devices
+    const CANVAS_LOGICAL_WIDTH = 1920;
+    const CANVAS_LOGICAL_HEIGHT = 1080;
+    
+    // Tile pattern image
+    let tilePattern = null;
+    let tileImage = null;
+    let isTileLoaded = false;
+    
+    // Function to load tile image and create pattern
+    function loadTilePattern(callback) {
+      if (isTileLoaded && tilePattern && tileImage && tileImage.complete) {
+        if (callback) callback();
+        return;
+      }
+      
+      // If image is already loading or loaded, wait for it
+      if (tileImage && !tileImage.complete) {
+        tileImage.onload = () => {
+          if (canvas.width > 0 && canvas.height > 0) {
+            tilePattern = ctx.createPattern(tileImage, 'repeat');
+            isTileLoaded = true;
+            if (callback) callback();
+          }
+        };
+        return;
+      }
+      
+      // Load the image
+      tileImage = new Image();
+      tileImage.onload = () => {
+        // Create a repeating pattern from the tile image
+        // Need to create pattern after canvas is initialized
+        if (canvas.width > 0 && canvas.height > 0) {
+          tilePattern = ctx.createPattern(tileImage, 'repeat');
+          isTileLoaded = true;
+          if (callback) callback();
+        } else {
+          // Canvas not ready yet, callback will be called when canvas is initialized
+          if (callback) callback();
+        }
+      };
+      tileImage.onerror = () => {
+        console.error('Failed to load tile image from assets/tile.jpg');
+        isTileLoaded = false;
+        tilePattern = null;
+        if (callback) callback();
+      };
+      tileImage.src = 'assets/tile.jpg';
+    }
+    
+    // Function to draw tile pattern background (synchronous, assumes pattern is loaded)
+    function drawTilePattern() {
+      if (tilePattern && isTileLoaded) {
+        // Fill entire canvas with the tile pattern
+        ctx.fillStyle = tilePattern;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        // Fallback: draw a simple background color if tile fails or not loaded yet
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    }
 
-    function resizeCanvas() {
-      // Save current image before resizing
-      let imageData = null;
+    // Store current drawing as ImageData for restoration
+    let currentDrawing = null;
+    
+    function saveCurrentDrawing() {
       try {
         if (canvas.width > 0 && canvas.height > 0) {
-          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          currentDrawing = ctx.getImageData(0, 0, canvas.width, canvas.height);
         }
       } catch (e) {
-        // Canvas might be empty or not initialized
+        // Canvas might be empty
       }
-      
-      const header = document.querySelector('header');
-      const headerHeight = header ? header.offsetHeight : 70;
-      const newWidth = window.innerWidth;
-      const newHeight = Math.max(400, window.innerHeight - headerHeight);
-      
-      // Only resize if dimensions changed
-      if (canvas.width !== newWidth || canvas.height !== newHeight) {
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        
-        // Restore image data if we had any
-        if (imageData) {
-          try {
-            ctx.putImageData(imageData, 0, 0);
-          } catch (e) {
-            // If restoration fails, try to reload from Firebase
-            console.log('Could not restore canvas, will reload from Firebase');
-          }
+    }
+    
+    function restoreCurrentDrawing() {
+      if (currentDrawing) {
+        try {
+          ctx.putImageData(currentDrawing, 0, 0);
+        } catch (e) {
+          console.log('Could not restore drawing');
         }
       }
+    }
+    
+    let isCanvasInitialized = false;
+    
+    function resizeCanvas() {
+      const header = document.querySelector('header');
+      const headerHeight = header ? header.offsetHeight : 70;
+      const displayWidth = window.innerWidth;
+      const displayHeight = Math.max(400, window.innerHeight - headerHeight);
       
-      // Ensure crisp lines
+      // Set display size (CSS) to fit the viewport
+      canvas.style.width = displayWidth + 'px';
+      canvas.style.height = displayHeight + 'px';
+      
+      // Initialize canvas with fixed logical resolution only once
+      if (!isCanvasInitialized) {
+        // Set fixed logical resolution (internal canvas size)
+        canvas.width = CANVAS_LOGICAL_WIDTH;
+        canvas.height = CANVAS_LOGICAL_HEIGHT;
+        
+        // Load tile pattern and draw background
+        loadTilePattern(() => {
+          // Redraw pattern once image is loaded
+          if (isTileLoaded) {
+            drawTilePattern();
+            saveCurrentDrawing();
+          }
+        });
+        // Draw immediately (fallback if tile not loaded yet - will show gray background)
+        drawTilePattern();
+        saveCurrentDrawing();
+        
+        isCanvasInitialized = true;
+      }
+      // If canvas is already initialized, we only need to update display size
+      // The internal resolution stays the same, so no need to redraw
+      
+      // Ensure crisp lines (set once, but safe to set multiple times)
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
     }
     // Handle window resize and orientation changes
     window.addEventListener('resize', resizeCanvas);
@@ -163,6 +260,9 @@
     if (header && window.ResizeObserver) {
       new ResizeObserver(resizeCanvas).observe(header);
     }
+    // Start loading tile pattern early
+    loadTilePattern();
+    
     // Initial resize
     resizeCanvas();
     // Also resize after a short delay to handle any layout issues
@@ -180,10 +280,12 @@
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      return { 
-        x: (e.clientX - rect.left) * scaleX, 
-        y: (e.clientY - rect.top) * scaleY 
-      };
+      let x = (e.clientX - rect.left) * scaleX;
+      let y = (e.clientY - rect.top) * scaleY;
+      // Clamp coordinates to canvas bounds
+      x = Math.max(0, Math.min(canvas.width, x));
+      y = Math.max(0, Math.min(canvas.height, y));
+      return { x, y };
     }
     function posFromTouch(e) {
       e.preventDefault(); // Prevent scrolling
@@ -192,10 +294,12 @@
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
-      return { 
-        x: (t.clientX - rect.left) * scaleX, 
-        y: (t.clientY - rect.top) * scaleY 
-      };
+      let x = (t.clientX - rect.left) * scaleX;
+      let y = (t.clientY - rect.top) * scaleY;
+      // Clamp coordinates to canvas bounds
+      x = Math.max(0, Math.min(canvas.width, x));
+      y = Math.max(0, Math.min(canvas.height, y));
+      return { x, y };
     }
 
     function begin(x, y) {
@@ -212,7 +316,11 @@
       ctx.stroke();
       lastX = x; lastY = y;
     }
-    function end() { drawing = false; }
+    function end() { 
+      drawing = false;
+      // Update stored drawing after each stroke
+      saveCurrentDrawing();
+    }
 
     // Prevent context menu on canvas (long press on mobile)
     canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -259,29 +367,65 @@
       end();
     }, { passive: false });
 
-    // Clear
+    // Clear - redraw tile pattern
     clearBtn.addEventListener('click', () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawTilePattern();
+      saveCurrentDrawing();
     });
 
     // ----- 5) Load shared image in real time -----
     const docRef = ref(db, 'drawing');
+    
     onValue(docRef, (snap) => {
       const data = snap.val();
       if (data && data.img) {
         const img = new Image();
         img.onload = () => {
-          // Clear before drawing the shared image so it matches exactly
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // Fit image to canvas preserving aspect (draw full canvas)
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          // Canvas should be initialized by resizeCanvas() by now
+          // But ensure it's initialized just in case
+          if (!isCanvasInitialized) {
+            resizeCanvas();
+          }
+          
+          // Ensure tile pattern is loaded before drawing
+          if (!isTileLoaded) {
+            loadTilePattern(() => {
+              drawTilePattern();
+              // Scale and draw the shared image to fit fixed canvas resolution
+              ctx.drawImage(img, 0, 0, CANVAS_LOGICAL_WIDTH, CANVAS_LOGICAL_HEIGHT);
+              saveCurrentDrawing();
+            });
+          } else {
+            // Always draw tile pattern first (for transparency support and consistency)
+            drawTilePattern();
+            
+            // Scale and draw the shared image to fit fixed canvas resolution
+            // This ensures consistent size across all devices, regardless of original image size
+            // The image will be scaled to exactly match our fixed resolution (1920x1080)
+            ctx.drawImage(img, 0, 0, CANVAS_LOGICAL_WIDTH, CANVAS_LOGICAL_HEIGHT);
+            
+            // Update stored drawing
+            saveCurrentDrawing();
+          }
+        };
+        img.onerror = () => {
+          // If image fails to load, ensure canvas is initialized with tile pattern
+          if (!isCanvasInitialized) {
+            resizeCanvas();
+          } else {
+            drawTilePattern();
+            saveCurrentDrawing();
+          }
         };
         img.src = data.img;
       }
+      // If no image in database, canvas will show tile pattern from initial resizeCanvas() call
     });
 
     // ----- 6) Save for everyone (overwrites the single shared image) -----
     saveBtn.addEventListener('click', async () => {
+      // Save at fixed resolution to ensure consistency
+      // Canvas is already at fixed resolution, so we can save directly
       const dataUrl = canvas.toDataURL('image/png');
       await set(docRef, { img: dataUrl, savedAt: Date.now() });
       saveBtn.textContent = 'Saved!';
