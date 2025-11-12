@@ -6,7 +6,7 @@
   <title>Shared Canvas (GitHub Pages + Firebase)</title>
   <style>
     :root { --bg: #fafafa; --ink: #111; }
-    html, body { height: 100%; margin: 0; background: var(--bg); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; touch-action: none; }
+    html, body { height: 100%; margin: 0; background: var(--bg); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; touch-action: manipulation; }
     .wrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
     header { padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #e5e5e5; background: white; position: sticky; top: 0; z-index: 1; }
     .spacer { flex: 1; }
@@ -28,7 +28,6 @@
       display: block; 
       width: 100%; 
       height: 100%; 
-      touch-action: none;
     }
     
     /* Mobile: enable panning with scrollable container */
@@ -45,7 +44,7 @@
       }
       canvas {
         /* On mobile, canvas takes full logical size, container allows scrolling */
-        touch-action: none;
+        touch-action: pinch-zoom;
       }
     }
     /* Support for devices with notches */
