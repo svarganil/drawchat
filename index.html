@@ -7,20 +7,71 @@
   <style>
     :root { --bg: #fafafa; --ink: #111; }
     html, body { height: 100%; margin: 0; background: var(--bg); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; touch-action: manipulation; }
-    .wrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-    header { padding: 10px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #e5e5e5; background: white; position: sticky; top: 0; z-index: 1; }
-    .spacer { flex: 1; }
-    .controls-row { display: flex; gap: 8px; align-items: center; }
-    .buttons-row { display: flex; gap: 8px; align-items: center; }
-    label { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
-    input[type="range"] { width: 80px; }
-    button, select, input[type="color"] { border: 1px solid #ddd; background: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; min-height: 36px; touch-action: manipulation; }
-    button:hover { border-color: #bbb; }
-    input[type="color"] { width: 40px; height: 36px; padding: 2px; cursor: pointer; }
+    .wrap { position: relative; height: 100%; }
+    .menu-toggle {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      border: 1px solid #ddd;
+      background: #fff;
+      padding: 10px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      min-height: 40px;
+      touch-action: manipulation;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    }
+    .menu-toggle.active {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .clear-button {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 9;
+      transform: translateX(-120%);
+      opacity: 0;
+      pointer-events: none;
+      border: 1px solid #ddd;
+      background: #fff;
+      padding: 10px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      min-height: 40px;
+      touch-action: manipulation;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+    .clear-button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    body.draw-mode .clear-button {
+      transform: translateX(64px);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .menu-toggle:hover,
+    body.draw-mode .clear-button:hover {
+      border-color: #bbb;
+    }
     .canvas-container {
       position: relative;
       width: 100%;
-      height: calc(100vh - 70px);
+      height: 100vh;
       overflow: auto;
       background: #f0f0f0;
       -webkit-overflow-scrolling: touch;
@@ -38,6 +89,19 @@
     }
     canvas { 
       display: block; 
+    }
+    @media (max-width: 480px) {
+      .menu-toggle,
+      .clear-button {
+        top: 12px;
+        left: 12px;
+        min-height: 38px;
+        padding: 9px 12px;
+        font-size: 16px;
+      }
+      body.draw-mode .clear-button {
+        transform: translateX(56px);
+      }
     }
     
     /* Mobile: enable panning with scrollable container */
@@ -57,42 +121,14 @@
     }
     /* Support for devices with notches */
     @supports (padding: max(0px)) {
-      header { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
-      canvas { height: calc(100vh - 70px - env(safe-area-inset-bottom)); }
-    }
-    
-    /* Tablet and smaller desktop */
-    @media (max-width: 768px) {
-      html, body { font-size: 13px; }
-      header { padding: 8px 10px; gap: 6px; }
-      .controls-row { display: flex; gap: 6px; align-items: center; }
-      label { font-size: 12px; }
-      label span { display: inline; }
-      input[type="range"] { width: 60px; }
-      button { padding: 10px 14px; font-size: 12px; min-height: 40px; }
-      input[type="color"] { width: 44px; height: 40px; }
-      .buttons-row { display: flex; gap: 6px; }
-      #save { flex: 1.2; }
-    }
-    
-    /* Mobile phones */
-    @media (max-width: 480px) {
-      header { flex-direction: column; align-items: stretch; padding: 8px; }
-      .spacer { display: none; }
-      .controls-row { display: flex; gap: 6px; align-items: center; width: 100%; }
-      label { flex: 1; min-width: 0; }
-      label span { display: none; }
-      input[type="range"] { flex: 1; width: auto; min-width: 0; }
-      input[type="color"] { width: 44px; flex-shrink: 0; }
-      .buttons-row { display: flex; gap: 6px; width: 100%; }
-      button { flex: 1; min-width: 0; }
-    }
-    
-    /* Very small screens */
-    @media (max-width: 360px) {
-      header { padding: 6px; gap: 4px; }
-      button { padding: 8px 10px; font-size: 11px; }
-      input[type="range"] { width: 50px; }
+      .menu-toggle,
+      .clear-button {
+        top: max(12px, env(safe-area-inset-top));
+        left: max(12px, env(safe-area-inset-left));
+      }
+      .canvas-container {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
     }
     
     /* Prevent text selection on buttons during touch */
@@ -105,18 +141,8 @@
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <div class="spacer"></div>
-      <div class="controls-row">
-        <label><span>Brush:</span> <input id="size" type="range" min="1" max="30" value="6" /></label>
-        <input id="color" type="color" value="#111111" />
-      </div>
-      <div class="buttons-row">
-        <button id="clear">Clear</button>
-        <button id="save">Guardar</button>
-      </div>
-    </header>
-
+    <button id="toggleMenu" class="menu-toggle" type="button" aria-pressed="false" aria-label="Начать рисование">✏️</button>
+    <button id="clear" class="clear-button" type="button" aria-label="Очистить холст" disabled>🧽</button>
     <div class="canvas-container">
       <canvas id="board"></canvas>
     </div>
@@ -159,6 +185,8 @@
     // Fixed canvas resolution for consistency across all devices
     const CANVAS_LOGICAL_WIDTH = 3840;
     const CANVAS_LOGICAL_HEIGHT = 2160;
+    const BRUSH_COLOR = '#111111';
+    const BRUSH_SIZE = 6;
     
     // Tile pattern image
     let tilePattern = null;
@@ -247,6 +275,7 @@
     let hasCenteredView = false;
     let isPanning = false;
     let isSpacePressed = false;
+    let drawingEnabled = false;
     let panStartX = 0;
     let panStartY = 0;
     let panScrollLeft = 0;
@@ -307,10 +336,8 @@
     }
     
     function resizeCanvas() {
-      const headerEl = document.querySelector('header');
-      const headerHeight = headerEl ? headerEl.offsetHeight : 70;
       if (container) {
-        const containerHeight = Math.max(400, window.innerHeight - headerHeight);
+        const containerHeight = Math.max(400, window.innerHeight);
         container.style.height = containerHeight + 'px';
       }
 
@@ -368,11 +395,6 @@
         hasCenteredView = true;
       }, 200);
     });
-    // Use ResizeObserver to watch header size changes
-    const header = document.querySelector('header');
-    if (header && window.ResizeObserver) {
-      new ResizeObserver(resizeCanvas).observe(header);
-    }
     // Start loading tile pattern early
     loadTilePattern();
     
@@ -381,13 +403,65 @@
     // Also resize after a short delay to handle any layout issues
     setTimeout(resizeCanvas, 100);
 
-    const sizeEl = document.getElementById('size');
-    const colorEl = document.getElementById('color');
+    const menuBtn = document.getElementById('toggleMenu');
     const clearBtn = document.getElementById('clear');
-    const saveBtn = document.getElementById('save');
+    const MENU_ICON = '✏️';
+    const SAVE_ICON = '💾';
 
     let drawing = false;
     let lastX = 0, lastY = 0;
+    let saveFeedbackTimeout = null;
+
+    function setDrawingEnabled(enabled) {
+      const wasEnabled = drawingEnabled;
+      drawingEnabled = enabled;
+      document.body.classList.toggle('draw-mode', enabled);
+      if (menuBtn) {
+        menuBtn.classList.toggle('active', enabled);
+        menuBtn.setAttribute('aria-pressed', String(enabled));
+        menuBtn.setAttribute('aria-label', enabled ? 'Закончить рисование и сохранить' : 'Начать рисование');
+        if (enabled) {
+          menuBtn.textContent = MENU_ICON;
+          if (saveFeedbackTimeout) {
+            clearTimeout(saveFeedbackTimeout);
+            saveFeedbackTimeout = null;
+          }
+        }
+      }
+      if (clearBtn) {
+        clearBtn.disabled = !enabled;
+      }
+      if (!enabled) {
+        if (drawing) {
+          end();
+        }
+        drawing = false;
+      }
+      if (!enabled && wasEnabled) {
+        saveDrawing()
+          .then(() => {
+            if (menuBtn) {
+              menuBtn.textContent = SAVE_ICON;
+              if (saveFeedbackTimeout) {
+                clearTimeout(saveFeedbackTimeout);
+              }
+              saveFeedbackTimeout = setTimeout(() => {
+                menuBtn.textContent = MENU_ICON;
+                saveFeedbackTimeout = null;
+              }, 1200);
+            }
+          })
+          .catch(console.error);
+      }
+    }
+
+    setDrawingEnabled(false);
+
+    if (menuBtn) {
+      menuBtn.addEventListener('click', () => {
+        setDrawingEnabled(!drawingEnabled);
+      });
+    }
 
     function posFromMouse(e) {
       const rect = canvas.getBoundingClientRect();
@@ -416,20 +490,25 @@
     }
 
     function begin(x, y) {
+      if (!drawingEnabled) {
+        drawing = false;
+        return;
+      }
       drawing = true;
       lastX = x; lastY = y;
       ctx.beginPath();
+      ctx.lineWidth = BRUSH_SIZE;
+      ctx.strokeStyle = BRUSH_COLOR;
       ctx.moveTo(x, y);
     }
     function drawTo(x, y) {
-      if (!drawing) return;
-      ctx.lineWidth = Number(sizeEl.value);
-      ctx.strokeStyle = colorEl.value;
+      if (!drawing || !drawingEnabled) return;
       ctx.lineTo(x, y);
       ctx.stroke();
       lastX = x; lastY = y;
     }
     function end() { 
+      if (!drawing) return;
       drawing = false;
       // Update stored drawing after each stroke
       saveCurrentDrawing();
@@ -454,10 +533,13 @@
     });
 
     canvas.addEventListener('mousedown', e => {
-      if (isSpacePressed || e.button === 1 || e.button === 2) {
-        e.preventDefault();
-        drawing = false;
-        startPan(e.clientX, e.clientY);
+      const panGesture = !drawingEnabled || isSpacePressed || e.button === 1 || e.button === 2;
+      if (panGesture) {
+        if (e.button === 0 || e.button === 1 || e.button === 2) {
+          e.preventDefault();
+          drawing = false;
+          startPan(e.clientX, e.clientY);
+        }
         return;
       }
       if (e.button !== 0) return;
@@ -465,7 +547,7 @@
       begin(p.x, p.y);
     });
     canvas.addEventListener('mousemove', e => { 
-      if (isPanning) return;
+      if (isPanning || !drawingEnabled) return;
       const p = posFromMouse(e); 
       drawTo(p.x, p.y); 
     });
@@ -474,17 +556,20 @@
       e.preventDefault();
       updatePan(e.clientX, e.clientY);
     });
-    window.addEventListener('mouseup', e => {
+    window.addEventListener('mouseup', () => {
       if (isPanning) {
         endPan();
       }
-      end();
+      if (drawing) {
+        end();
+      }
     });
 
-    // Touch handling: one finger = drawing on canvas, container allows scrolling for panning
+    // Touch handling: tools button toggles drawing; single-finger pans when drawing disabled
     let lastTouchEnd = 0;
     canvas.addEventListener('touchstart', e => { 
-      if (e.touches.length >= 2) {
+      const shouldPan = !drawingEnabled || e.touches.length >= 2;
+      if (shouldPan) {
         drawing = false;
         const midpoint = getTouchMidpoint(e.touches);
         if (midpoint) {
@@ -493,7 +578,7 @@
         }
         return;
       }
-      
+
       if (e.touches.length === 1) {
         e.preventDefault();
         const p = posFromTouch(e); 
@@ -501,7 +586,7 @@
           begin(p.x, p.y);
         }
       }
-      
+
       const now = Date.now();
       if (now - lastTouchEnd < 300 && e.touches.length === 1) {
         e.preventDefault();
@@ -509,7 +594,7 @@
     }, { passive: false });
     
     canvas.addEventListener('touchmove', e => { 
-      if (isPanning && e.touches.length >= 2) {
+      if (isPanning) {
         e.preventDefault();
         const midpoint = getTouchMidpoint(e.touches);
         if (midpoint) {
@@ -528,7 +613,7 @@
     canvas.addEventListener('touchend', e => {
       lastTouchEnd = Date.now();
       
-      if (isPanning && e.touches.length < 2) {
+      if (isPanning && e.touches.length === 0) {
         endPan();
       }
       
@@ -547,14 +632,25 @@
     }, { passive: false });
 
     // Clear - redraw tile pattern
-    clearBtn.addEventListener('click', () => {
-      drawTilePattern();
-      saveCurrentDrawing();
-    });
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        drawTilePattern();
+        saveCurrentDrawing();
+      });
+    }
 
     // ----- 5) Load shared image in real time -----
     const docRef = ref(db, 'drawing');
     
+    async function saveDrawing() {
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        await set(docRef, { img: dataUrl, savedAt: Date.now() });
+      } catch (error) {
+        console.error('Failed to save drawing', error);
+      }
+    }
+
     onValue(docRef, (snap) => {
       const data = snap.val();
       if (data && data.img) {
@@ -599,16 +695,6 @@
         img.src = data.img;
       }
       // If no image in database, canvas will show tile pattern from initial resizeCanvas() call
-    });
-
-    // ----- 6) Save for everyone (overwrites the single shared image) -----
-    saveBtn.addEventListener('click', async () => {
-      // Save at fixed resolution to ensure consistency
-      // Canvas is already at fixed resolution, so we can save directly
-      const dataUrl = canvas.toDataURL('image/png');
-      await set(docRef, { img: dataUrl, savedAt: Date.now() });
-      saveBtn.textContent = 'Saved!';
-      setTimeout(() => (saveBtn.textContent = 'Guardar'), 1200);
     });
   </script>
 </body>
