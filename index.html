@@ -24,6 +24,17 @@
       overflow: auto;
       background: #f0f0f0;
       -webkit-overflow-scrolling: touch;
+      cursor: grab;
+    }
+    .canvas-container.is-panning,
+    canvas.is-panning {
+      cursor: grabbing;
+    }
+    body.pan-mode .canvas-container {
+      cursor: grab;
+    }
+    body.pan-mode .canvas-container.is-panning {
+      cursor: grabbing;
     }
     canvas { 
       display: block; 
@@ -143,6 +154,7 @@
     // ----- 4) Canvas setup -----
     const canvas = document.getElementById('board');
     const ctx = canvas.getContext('2d');
+    const container = document.querySelector('.canvas-container');
     
     // Fixed canvas resolution for consistency across all devices
     const CANVAS_LOGICAL_WIDTH = 3840;
@@ -233,9 +245,14 @@
     
     let isCanvasInitialized = false;
     let hasCenteredView = false;
+    let isPanning = false;
+    let isSpacePressed = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panScrollLeft = 0;
+    let panScrollTop = 0;
 
     function centerCanvasView() {
-      const container = document.querySelector('.canvas-container');
       if (!container) return;
       const scrollX = Math.max(0, (canvas.clientWidth - container.clientWidth) / 2);
       const scrollY = Math.max(0, (canvas.clientHeight - container.clientHeight) / 2);
@@ -245,11 +262,53 @@
         behavior: 'auto'
       });
     }
+
+    function startPan(clientX, clientY) {
+      if (!container) return;
+      isPanning = true;
+      panStartX = clientX;
+      panStartY = clientY;
+      panScrollLeft = container.scrollLeft;
+      panScrollTop = container.scrollTop;
+      container.classList.add('is-panning');
+      canvas.classList.add('is-panning');
+    }
+
+    function updatePan(clientX, clientY) {
+      if (!isPanning || !container) return;
+      const dx = clientX - panStartX;
+      const dy = clientY - panStartY;
+      container.scrollTo({
+        left: panScrollLeft - dx,
+        top: panScrollTop - dy,
+        behavior: 'auto'
+      });
+    }
+
+    function endPan() {
+      if (!isPanning) return;
+      isPanning = false;
+      container.classList.remove('is-panning');
+      canvas.classList.remove('is-panning');
+    }
+
+    function getTouchMidpoint(touches) {
+      if (!touches || touches.length === 0) return null;
+      let sumX = 0;
+      let sumY = 0;
+      for (let i = 0; i < touches.length; i++) {
+        sumX += touches[i].clientX;
+        sumY += touches[i].clientY;
+      }
+      return {
+        x: sumX / touches.length,
+        y: sumY / touches.length
+      };
+    }
     
     function resizeCanvas() {
       const headerEl = document.querySelector('header');
       const headerHeight = headerEl ? headerEl.offsetHeight : 70;
-      const container = document.querySelector('.canvas-container');
       if (container) {
         const containerHeight = Math.max(400, window.innerHeight - headerHeight);
         container.style.height = containerHeight + 'px';
@@ -380,25 +439,62 @@
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     
     // Mouse
-    canvas.addEventListener('mousedown', e => { const p = posFromMouse(e); begin(p.x, p.y); });
-    canvas.addEventListener('mousemove', e => { const p = posFromMouse(e); drawTo(p.x, p.y); });
-    window.addEventListener('mouseup', end);
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' && !isSpacePressed) {
+        isSpacePressed = true;
+        document.body.classList.add('pan-mode');
+        e.preventDefault();
+      }
+    });
+    window.addEventListener('keyup', e => {
+      if (e.code === 'Space') {
+        isSpacePressed = false;
+        document.body.classList.remove('pan-mode');
+      }
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      if (isSpacePressed || e.button === 1 || e.button === 2) {
+        e.preventDefault();
+        drawing = false;
+        startPan(e.clientX, e.clientY);
+        return;
+      }
+      if (e.button !== 0) return;
+      const p = posFromMouse(e);
+      begin(p.x, p.y);
+    });
+    canvas.addEventListener('mousemove', e => { 
+      if (isPanning) return;
+      const p = posFromMouse(e); 
+      drawTo(p.x, p.y); 
+    });
+    window.addEventListener('mousemove', e => {
+      if (!isPanning) return;
+      e.preventDefault();
+      updatePan(e.clientX, e.clientY);
+    });
+    window.addEventListener('mouseup', e => {
+      if (isPanning) {
+        endPan();
+      }
+      end();
+    });
 
     // Touch handling: one finger = drawing on canvas, container allows scrolling for panning
     let lastTouchEnd = 0;
-    const isMobileDevice = () => window.innerWidth <= 768;
-    
     canvas.addEventListener('touchstart', e => { 
-      // Two fingers = allow panning (scrolling container)
-      if (e.touches.length === 2) {
+      if (e.touches.length >= 2) {
         drawing = false;
-        // Allow default scrolling behavior for panning
+        const midpoint = getTouchMidpoint(e.touches);
+        if (midpoint) {
+          e.preventDefault();
+          startPan(midpoint.x, midpoint.y);
+        }
         return;
       }
       
-      // One finger on canvas = drawing mode
       if (e.touches.length === 1) {
-        // Prevent scrolling while drawing to get accurate coordinates
         e.preventDefault();
         const p = posFromTouch(e); 
         if (p) {
@@ -406,7 +502,6 @@
         }
       }
       
-      // Prevent double-tap zoom
       const now = Date.now();
       if (now - lastTouchEnd < 300 && e.touches.length === 1) {
         e.preventDefault();
@@ -414,16 +509,17 @@
     }, { passive: false });
     
     canvas.addEventListener('touchmove', e => { 
-      // Two fingers = allow panning (scrolling)
-      if (e.touches.length === 2) {
-        drawing = false;
-        // Don't prevent default - allow scrolling
+      if (isPanning && e.touches.length >= 2) {
+        e.preventDefault();
+        const midpoint = getTouchMidpoint(e.touches);
+        if (midpoint) {
+          updatePan(midpoint.x, midpoint.y);
+        }
         return;
       }
       
-      // One finger = drawing
       if (e.touches.length === 1 && drawing) {
-        e.preventDefault(); // Prevent scrolling while drawing
+        e.preventDefault();
         const p = posFromTouch(e); 
         if (p) drawTo(p.x, p.y);
       }
@@ -431,6 +527,10 @@
     
     canvas.addEventListener('touchend', e => {
       lastTouchEnd = Date.now();
+      
+      if (isPanning && e.touches.length < 2) {
+        endPan();
+      }
       
       // End drawing if we were drawing
       if (drawing && e.touches.length === 0) {
@@ -440,6 +540,9 @@
     
     canvas.addEventListener('touchcancel', e => {
       drawing = false;
+      if (isPanning) {
+        endPan();
+      }
       e.preventDefault();
     }, { passive: false });
 
